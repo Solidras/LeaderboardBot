@@ -18,6 +18,7 @@ db = sqlite3.connect('./database.db')
 #### Bot commands ####
 
 @bot.command()
+@commands.has_role('Leaderboard')
 async def create_leaderboard(ctx, name):
 	c = db.cursor()
 	
@@ -32,6 +33,7 @@ async def create_leaderboard(ctx, name):
 	c.close()
 	
 @bot.command()
+@commands.has_role('Leaderboard')
 async def add_entry(ctx, name_lb, entry):
 
 	leaderboard_id = get_id_leaderboard(name_lb, ctx.guild.id)
@@ -52,6 +54,7 @@ async def add_entry(ctx, name_lb, entry):
 @bot.command()
 async def vote(ctx, name_lb, entry, score):
 	id_member = ctx.message.author.id
+	score = int(score)
 	
 	create_member_if_not_exist(id_member)
 	
@@ -93,6 +96,46 @@ async def show_all_leaderboards(ctx):
 	
 	embed = discord.Embed(title='List of leaderboards', type='rich', color=discord.Color.green(), description='\n'.join(leaderboard))
 	await ctx.send(embed=embed)
+
+@bot.command()
+async def show(ctx, name_lb):
+	leaderboard_id = get_id_leaderboard(name_lb, ctx.guild.id)
+	
+	if leaderboard_id == -1:
+		await ctx.send("The leaderboard does not exist.")
+		return
+		
+	c = db.cursor()
+	c.execute(''' SELECT E.id, E.name, AVG(V.score) FROM Entry AS E
+				  JOIN Vote as V ON V.id_entry = E.id
+				  WHERE E.id_leaderboard = ?
+				  GROUP BY E.name ''', (leaderboard_id,))
+	
+	# ID, name, average score
+	entries = c.fetchall()
+	votes = {}
+	for entry in entries:
+		c.execute(''' SELECT M.id, V.score FROM Member as M
+					  JOIN Vote as V ON V.id_member
+					  JOIN Entry as E ON E.id = V.id_entry
+					  WHERE E.id_leaderboard = ? AND E.id = ? ''', (leaderboard_id, entry[0]))
+		votes[entry[1]] = c.fetchall()
+	
+	#Sort by score
+	entries = sorted(entries, key=lambda entry: entry[2], reverse=True)
+	leaderboard = ""
+
+	#Format for discord messages
+	i = 1
+	for entry in entries:
+	
+		#If mention failed (if the member left the server) the function crashes
+		vote_by_member = ' - '.join((lambda vote : [bot.get_user(v[0]).mention + " " + str(v[1]) for v in vote])(votes[entry[1]]))
+		leaderboard += "`" + str(i) + ".` " + entry[1] + " " + str(entry[2]) + " \|\| " + vote_by_member + "\n"
+		i += 1
+	
+	embed = discord.Embed(title=name_lb, type='rich', color=discord.Color.green(), description=leaderboard)
+	await ctx.send(embed=embed)
 	
 
 #### Bot event handlers ####
@@ -111,14 +154,16 @@ async def on_ready():
 	if c.fetchone()[0]!=1:
 		await create_database()
 	
-	c.close()
-	
+	c.close()	
 	
 @bot.event
 async def on_command_error(ctx, error):
 	if isinstance(error, commands.CommandNotFound):
 		await ctx.send('Unknown command.', delete_after=3)
 		return
+	elif isinstance(error, commands.CheckFailure):
+		await ctx.send("You're not authorized to execute this command.")
+		return 
 	raise error
 	
 @bot.command()
