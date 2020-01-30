@@ -217,17 +217,23 @@ async def utility_show(chan, name_lb, guild_id):
 	entries = sorted(entries, key=lambda entry: entry[2], reverse=True)
 	leaderboard = ""
 
+	embeds = []
 	#Format for discord messages
 	i = 1
 	for entry in entries:
 	
 		#If mention failed (if the member left the server) the function crashes
 		vote_by_member = ' - '.join((lambda vote : [bot.get_user(v[0]).mention + " " + str(v[1]) for v in vote])(votes[entry[1]]))
-		leaderboard += "`" + str(i) + ".` " + entry[1] + " " + str(entry[2]) + " \|\| " + vote_by_member + "\n"
+		next_entry = "`" + str(i) + ".` " + entry[1] + " " + str(entry[2]) + " \|\| " + vote_by_member + "\n"
+		if len(leaderboard) + len(next_entry) > 2048:
+			embeds.append(discord.Embed(type='rich', color=discord.Color.green(), description=leaderboard))
+			leaderboard = ""
+		leaderboard += next_entry
 		i += 1
 	
-	embed = discord.Embed(title=name_lb, type='rich', color=discord.Color.green(), description=leaderboard)
-	await chan.send(embed=embed)
+	embeds[0].title = name_lb
+	for embed in embeds:
+		await chan.send(embed=embed)
 
 def create_database():
 	query = open('create_database.sql', 'r').read()
