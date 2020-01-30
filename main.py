@@ -63,7 +63,7 @@ async def enable_update(ctx, name_lb, chan_id):
 	res = c.fetchone()
 	c.close()
 	
-	ctx.send("Update enabled for " + name_lb)
+	await ctx.send("Update enabled for " + name_lb)
 	
 @bot.command()
 async def disable_update(ctx, name_lb):
@@ -78,49 +78,21 @@ async def disable_update(ctx, name_lb):
 	res = c.fetchone()
 	c.close()
 	
-	ctx.send("Update disabled for " + name_lb)
+	await ctx.send("Update disabled for " + name_lb)
+	
+@bot.command()
+@commands.has_role('Leaderboard')
+async def vote_for(ctx, name_lb, entry, score):
+	users_mentions = ctx.message.mentions
+	if not users_mentions:
+		await ctx.send("You must give a user by mentionning him/her.")
+		return
+	
+	await utility_vote(ctx, name_lb, entry, score, users_mentions[0].id)
 	
 @bot.command()
 async def vote(ctx, name_lb, entry, score):
-	id_member = ctx.message.author.id
-	
-	try:
-		score = int(score)
-	except:
-		await ctx.send("Score (third argument) must be a number.")
-		return
-		
-	create_member_if_not_exist(id_member)
-	
-	leaderboard_id = get_id_leaderboard(name_lb, ctx.guild.id)
-	
-	if leaderboard_id == -1:
-		await ctx.send("The leaderboard does not exist.")
-		return
-		
-	entry_id = get_id_entry(entry, leaderboard_id)
-	
-	if entry_id == -1:
-		await ctx.send("The entry does not exist.")
-		return
-		
-	if not (0 <= score <= 10):
-		await ctx.send("The score must be between 0 and 10.")
-		return
-	
-	c = db.cursor()
-	try:
-		c.execute(''' INSERT OR REPLACE INTO Vote (id_member, id_entry, score) 
-					  VALUES (?, ?, ?) ''', (id_member, entry_id, score))
-		db.commit()
-		await ctx.send("Vote saved!")
-	except sqlite3.Error:
-		await ctx.send("Error during voting.")
-		print(type(e).__name__)
-		
-	chan_update = bot.get_channel(get_chan_update(name_lb, ctx.guild.id))
-	if chan_update:
-		await utility_show(chan_update, name_lb, ctx.guild.id)
+	await utility_vote(ctx, name_lb, entry, score, ctx.message.author.id)
 
 @bot.command()
 async def show_all_leaderboards(ctx):
@@ -179,6 +151,45 @@ async def ping(ctx):
 	
 #### Utilities functions ####
 
+async def utility_vote(ctx, name_lb, entry, score, id_member):	
+	try:
+		score = int(score)
+	except:
+		await ctx.send("Score (third argument) must be a number.")
+		return
+		
+	create_member_if_not_exist(id_member)
+	
+	leaderboard_id = get_id_leaderboard(name_lb, ctx.guild.id)
+	
+	if leaderboard_id == -1:
+		await ctx.send("The leaderboard does not exist.")
+		return
+		
+	entry_id = get_id_entry(entry, leaderboard_id)
+	
+	if entry_id == -1:
+		await ctx.send("The entry does not exist.")
+		return
+		
+	if not (0 <= score <= 10):
+		await ctx.send("The score must be between 0 and 10.")
+		return
+	
+	c = db.cursor()
+	try:
+		c.execute(''' INSERT OR REPLACE INTO Vote (id_member, id_entry, score) 
+					  VALUES (?, ?, ?) ''', (id_member, entry_id, score))
+		db.commit()
+		await ctx.send("Vote saved!")
+	except sqlite3.Error:
+		await ctx.send("Error during voting.")
+		print(type(e).__name__)
+		
+	chan_update = bot.get_channel(get_chan_update(name_lb, ctx.guild.id))
+	if chan_update:
+		await utility_show(chan_update, name_lb, ctx.guild.id)
+
 async def utility_show(chan, name_lb, guild_id):
 	leaderboard_id = get_id_leaderboard(name_lb, guild_id)
 	
@@ -197,7 +208,7 @@ async def utility_show(chan, name_lb, guild_id):
 	votes = {}
 	for entry in entries:
 		c.execute(''' SELECT M.id, V.score FROM Member as M
-					  JOIN Vote as V ON V.id_member
+					  JOIN Vote as V ON V.id_member = M.id
 					  JOIN Entry as E ON E.id = V.id_entry
 					  WHERE E.id_leaderboard = ? AND E.id = ? ''', (leaderboard_id, entry[0]))
 		votes[entry[1]] = c.fetchall()
