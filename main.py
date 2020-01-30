@@ -49,13 +49,47 @@ async def add_entry(ctx, name_lb, entry):
 		await ctx.send("Entry " + entry + " created")
 	except sqlite3.Error:
 		await ctx.send("ERROR : Entry " + entry + " already exists")
+
+@bot.command()
+async def enable_update(ctx, name_lb, chan_id):
+	leaderboard_id = get_id_leaderboard(name_lb, ctx.guild.id)
 	
+	if leaderboard_id == -1:
+		await ctx.send("The leaderboard does not exist.")
+		return
+		
+	c = db.cursor()
+	c.execute(''' UPDATE Leaderboard SET chan_id=?, to_update=1 WHERE name = ? AND id_server = ? ''', (chan_id, name_lb, ctx.guild.id))
+	res = c.fetchone()
+	c.close()
+	
+	ctx.send("Update enabled for " + name_lb)
+	
+@bot.command()
+async def disable_update(ctx, name_lb):
+	leaderboard_id = get_id_leaderboard(name_lb, ctx.guild.id)
+	
+	if leaderboard_id == -1:
+		await ctx.send("The leaderboard does not exist.")
+		return
+		
+	c = db.cursor()
+	c.execute(''' UPDATE Leaderboard SET to_update=0 WHERE name = ? AND id_server = ? ''', (name_lb, ctx.guild.id))
+	res = c.fetchone()
+	c.close()
+	
+	ctx.send("Update disabled for " + name_lb)
 	
 @bot.command()
 async def vote(ctx, name_lb, entry, score):
 	id_member = ctx.message.author.id
-	score = int(score)
 	
+	try:
+		score = int(score)
+	except:
+		await ctx.send("Score (third argument) must be a number.")
+		return
+		
 	create_member_if_not_exist(id_member)
 	
 	leaderboard_id = get_id_leaderboard(name_lb, ctx.guild.id)
@@ -83,6 +117,10 @@ async def vote(ctx, name_lb, entry, score):
 	except sqlite3.Error:
 		await ctx.send("Error during voting.")
 		print(type(e).__name__)
+		
+	chan_update = bot.get_channel(get_chan_update(name_lb, ctx.guild.id))
+	if chan_update:
+		await utility_show(chan_update, name_lb, ctx.guild.id)
 
 @bot.command()
 async def show_all_leaderboards(ctx):
@@ -99,10 +137,53 @@ async def show_all_leaderboards(ctx):
 
 @bot.command()
 async def show(ctx, name_lb):
-	leaderboard_id = get_id_leaderboard(name_lb, ctx.guild.id)
+	await utility_show(ctx, name_lb, ctx.guild.id)
+	
+
+#### Bot event handlers ####
+
+@bot.event
+async def on_ready():
+	print('Logged in as')
+	print(bot.user.name)
+	print(bot.user.id)
+	print('------')
+	
+	c = db.cursor()
+	c.execute(''' SELECT count(name) FROM sqlite_master WHERE type='table' AND name='Server' ''')
+
+	#if the count is 0, then table does not exist
+	if c.fetchone()[0]!=1:
+		create_database()
+	
+	c.close()	
+	
+@bot.event
+async def on_command_error(ctx, error):
+	if isinstance(error, commands.CommandNotFound):
+		await ctx.send('Unknown command.', delete_after=3)
+		return
+	elif isinstance(error, commands.CheckFailure):
+		await ctx.send("You're not authorized to execute this command.")
+		return 
+	elif isinstance(error, commands.MissingRequiredArgument):
+		await ctx.send("Missing arguments. !help for display help")
+		return
+	raise error
+	
+@bot.command()
+async def ping(ctx):
+	await ctx.message.delete()
+	await ctx.send('Yup, I\'m awake.', delete_after=5)
+
+	
+#### Utilities functions ####
+
+async def utility_show(chan, name_lb, guild_id):
+	leaderboard_id = get_id_leaderboard(name_lb, guild_id)
 	
 	if leaderboard_id == -1:
-		await ctx.send("The leaderboard does not exist.")
+		await chan.send("The leaderboard does not exist.")
 		return
 		
 	c = db.cursor()
@@ -135,46 +216,9 @@ async def show(ctx, name_lb):
 		i += 1
 	
 	embed = discord.Embed(title=name_lb, type='rich', color=discord.Color.green(), description=leaderboard)
-	await ctx.send(embed=embed)
-	
+	await chan.send(embed=embed)
 
-#### Bot event handlers ####
-
-@bot.event
-async def on_ready():
-	print('Logged in as')
-	print(bot.user.name)
-	print(bot.user.id)
-	print('------')
-	
-	c = db.cursor()
-	c.execute(''' SELECT count(name) FROM sqlite_master WHERE type='table' AND name='Server' ''')
-
-	#if the count is 0, then table does not exist
-	if c.fetchone()[0]!=1:
-		await create_database()
-	
-	c.close()	
-	
-@bot.event
-async def on_command_error(ctx, error):
-	if isinstance(error, commands.CommandNotFound):
-		await ctx.send('Unknown command.', delete_after=3)
-		return
-	elif isinstance(error, commands.CheckFailure):
-		await ctx.send("You're not authorized to execute this command.")
-		return 
-	raise error
-	
-@bot.command()
-async def ping(ctx):
-	await ctx.message.delete()
-	await ctx.send('Yup, I\'m awake.', delete_after=5)
-
-	
-#### Utilities functions ####
-
-async def create_database():
+def create_database():
 	query = open('create_database.sql', 'r').read()
 	
 	c = db.cursor()
@@ -216,6 +260,18 @@ def get_id_entry(name, leaderboard_id):
 		return res[0]
 	else:
 		return -1
+		
+def get_chan_update(name_lb, guild_id):
+	c = db.cursor()
+	c.execute(''' SELECT to_update, chan_id FROM Leaderboard WHERE name = ? AND id_server = ? ''', (name_lb, guild_id))
+	res = c.fetchone()
+	c.close()
+	
+	# res -> (to_update, chan_id)
+	if res[0] != 0:
+		return res[1]
+	else :
+		return None
 	
 	
 bot.run(BOT_TOKEN)

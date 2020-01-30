@@ -5,6 +5,8 @@ CREATE TABLE Leaderboard (
 id INTEGER PRIMARY KEY AUTOINCREMENT,
 name TEXT,
 id_server,
+to_update INT DEFAULT 0, /*BOOL*/
+chan_id INT,
 FOREIGN KEY (id_server) REFERENCES Server(id),
 UNIQUE(name, id_server));
 
