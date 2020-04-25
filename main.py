@@ -198,12 +198,12 @@ async def utility_show(chan, name_lb, guild_id):
 		return
 		
 	c = db.cursor()
-	c.execute(''' SELECT E.id, E.name, AVG(V.score) FROM Entry AS E
+	c.execute(''' SELECT E.id, E.name, SUM(V.score) FROM Entry AS E
 				  JOIN Vote as V ON V.id_entry = E.id
 				  WHERE E.id_leaderboard = ?
 				  GROUP BY E.name ''', (leaderboard_id,))
 	
-	# ID, name, average score
+	# ID, name, score
 	entries = c.fetchall()
 	votes = {}
 	for entry in entries:
@@ -224,13 +224,14 @@ async def utility_show(chan, name_lb, guild_id):
 	
 		#If mention failed (if the member left the server) the function crashes
 		vote_by_member = ' - '.join((lambda vote : [bot.get_user(v[0]).mention + " " + str(v[1]) for v in vote])(votes[entry[1]]))
-		next_entry = "`" + str(i) + ".` " + entry[1] + " " + str(entry[2]) + " \|\| " + vote_by_member + "\n"
+		next_entry = "`" + str(i) + ".` **" + entry[1] + "** " + str(entry[2]) + " \|\| " + vote_by_member + "\n"
 		if len(leaderboard) + len(next_entry) > 2048:
 			embeds.append(discord.Embed(type='rich', color=discord.Color.green(), description=leaderboard))
 			leaderboard = ""
 		leaderboard += next_entry
 		i += 1
 	
+	embeds.append(discord.Embed(type='rich', color=discord.Color.green(), description=leaderboard))
 	embeds[0].title = name_lb
 	for embed in embeds:
 		await chan.send(embed=embed)
